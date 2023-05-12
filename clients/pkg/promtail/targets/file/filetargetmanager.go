@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -33,6 +34,8 @@ const (
 	pathLabel              = "__path__"
 	pathExcludeLabel       = "__path_exclude__"
 	hostLabel              = "__host__"
+	limitFilesLabel        = "__limit_files__"
+	limitAlphaOrderLabel   = "__limit_alpha_order__"
 	kubernetesPodNodeField = "spec.nodeName"
 )
 
@@ -338,6 +341,16 @@ func (s *targetSyncer) sync(groups []*targetgroup.Group, targetEventHandler chan
 			}
 
 			pathExclude := labels[pathExcludeLabel]
+			limitFiles := 0
+			if limitFilesStr, ok := labels[limitFilesLabel]; ok {
+				limitFiles, _ = strconv.Atoi(string(limitFilesStr))
+			}
+			limitAlphaOrderDirect := true
+			if limitOrderStr, ok := labels[limitAlphaOrderLabel]; ok {
+				if limitOrderStr == "reverse" {
+					limitAlphaOrderDirect = false
+				}
+			}
 
 			for k := range labels {
 				if strings.HasPrefix(string(k), "__") {
@@ -366,7 +379,7 @@ func (s *targetSyncer) sync(groups []*targetgroup.Group, targetEventHandler chan
 				watcher = make(chan fsnotify.Event)
 				s.fileEventWatchers[wkey] = watcher
 			}
-			t, err := s.newTarget(wkey, string(pathExclude), labels, discoveredLabels, watcher, targetEventHandler)
+			t, err := s.newTarget(wkey, string(pathExclude), limitFiles, limitAlphaOrderDirect, labels, discoveredLabels, watcher, targetEventHandler)
 			if err != nil {
 				dropped = append(dropped, target.NewDroppedTarget(fmt.Sprintf("Failed to create target: %s", err.Error()), discoveredLabels))
 				level.Error(s.log).Log("msg", "Failed to create target", "key", key, "error", err)
@@ -442,8 +455,8 @@ func (s *targetSyncer) sendFileCreateEvent(event fsnotify.Event) {
 	}
 }
 
-func (s *targetSyncer) newTarget(path, pathExclude string, labels model.LabelSet, discoveredLabels model.LabelSet, fileEventWatcher chan fsnotify.Event, targetEventHandler chan fileTargetEvent) (*FileTarget, error) {
-	return NewFileTarget(s.metrics, s.log, s.entryHandler, s.positions, path, pathExclude, labels, discoveredLabels, s.targetConfig, s.watchConfig, fileEventWatcher, targetEventHandler, s.encoding, s.decompressCfg)
+func (s *targetSyncer) newTarget(path, pathExclude string, limitFiles int, limitAlphaSortDirect bool, labels model.LabelSet, discoveredLabels model.LabelSet, fileEventWatcher chan fsnotify.Event, targetEventHandler chan fileTargetEvent) (*FileTarget, error) {
+	return NewFileTarget(s.metrics, s.log, s.entryHandler, s.positions, path, pathExclude, limitFiles, limitAlphaSortDirect, labels, discoveredLabels, s.targetConfig, s.watchConfig, fileEventWatcher, targetEventHandler, s.encoding, s.decompressCfg)
 }
 
 func (s *targetSyncer) DroppedTargets() []target.Target {

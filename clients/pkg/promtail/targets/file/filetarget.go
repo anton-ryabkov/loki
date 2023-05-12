@@ -4,6 +4,7 @@ import (
 	"flag"
 	"os"
 	"path/filepath"
+	"sort"
 	"time"
 
 	"github.com/bmatcuk/doublestar"
@@ -99,6 +100,10 @@ type FileTarget struct {
 
 	readers map[string]Reader
 
+	limitFiles         int
+	limitAlpSortDirect bool
+	limitedReaders     []string
+
 	targetConfig *Config
 	watchConfig  WatchConfig
 
@@ -115,6 +120,8 @@ func NewFileTarget(
 	positions positions.Positions,
 	path string,
 	pathExclude string,
+	limitFiles int,
+	limitAlphaSortDirect bool,
 	labels model.LabelSet,
 	discoveredLabels model.LabelSet,
 	targetConfig *Config,
@@ -129,6 +136,8 @@ func NewFileTarget(
 		metrics:            metrics,
 		path:               path,
 		pathExclude:        pathExclude,
+		limitFiles:         limitFiles,
+		limitAlpSortDirect: limitAlphaSortDirect,
 		labels:             labels,
 		discoveredLabels:   discoveredLabels,
 		handler:            api.AddLabelsMiddleware(labels).Wrap(handler),
@@ -295,12 +304,13 @@ func (t *FileTarget) sync() error {
 	// (They will be restarted in startTailing)
 	t.pruneStoppedTailers()
 
-	// Start tailing all of the matched files if not already doing so.
-	t.startTailing(matches)
-
+	// First free possible space in readers list to allow add new ones when list is limited
 	// Stop tailing any files which no longer exist
 	toStopTailing := toStopTailing(matches, t.readers)
 	t.stopTailingAndRemovePosition(toStopTailing)
+
+	// Start tailing all of the matched files if not already doing so.
+	t.startTailing(matches)
 
 	return nil
 }
@@ -335,6 +345,28 @@ func (t *FileTarget) startTailing(ps []string) {
 	for _, p := range ps {
 		if _, ok := t.readers[p]; ok {
 			continue
+		}
+		if t.limitFiles > 0 && len(t.readers) >= t.limitFiles {
+			if t.limitedReaders == nil {
+				t.limitedReaders = make([]string, 0, len(t.readers)+1)
+				for k, _ := range t.readers {
+					t.limitedReaders = append(t.limitedReaders, k)
+				}
+			}
+			t.limitedReaders = append(t.limitedReaders, p)
+			sort.Strings(t.limitedReaders)
+			untailReader := t.limitedReaders[len(t.limitedReaders)-1]
+			if !t.limitAlpSortDirect {
+				untailReader = t.limitedReaders[0]
+				copy(t.limitedReaders, t.limitedReaders[1:])
+			}
+			t.limitedReaders = t.limitedReaders[:len(t.limitedReaders)-1]
+			if untailReader == p {
+				level.Debug(t.logger).Log("msg", "No tail file, limit overload", "filename", p)
+				continue
+			}
+			level.Debug(t.logger).Log("msg", "Stop tailing file, limit overload", "filename", untailReader)
+			t.stopTailingAndRemovePosition([]string{untailReader})
 		}
 
 		fi, err := os.Stat(p)
