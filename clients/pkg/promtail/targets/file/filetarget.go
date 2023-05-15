@@ -95,14 +95,12 @@ type FileTarget struct {
 	watches            map[string]struct{}
 	path               string
 	pathExclude        string
+	limitFiles         int
+	limitAlpSortDirect bool
 	quit               chan struct{}
 	done               chan struct{}
 
 	readers map[string]Reader
-
-	limitFiles         int
-	limitAlpSortDirect bool
-	limitedReaders     []string
 
 	targetConfig *Config
 	watchConfig  WatchConfig
@@ -342,25 +340,26 @@ func (t *FileTarget) stopWatching(dirs map[string]struct{}) {
 }
 
 func (t *FileTarget) startTailing(ps []string) {
+	var limitedReaders []string
 	for _, p := range ps {
 		if _, ok := t.readers[p]; ok {
 			continue
 		}
 		if t.limitFiles > 0 && len(t.readers) >= t.limitFiles {
-			if t.limitedReaders == nil {
-				t.limitedReaders = make([]string, 0, len(t.readers)+1)
+			if limitedReaders == nil {
+				limitedReaders = make([]string, 0, len(t.readers)+1)
 				for k, _ := range t.readers {
-					t.limitedReaders = append(t.limitedReaders, k)
+					limitedReaders = append(limitedReaders, k)
 				}
 			}
-			t.limitedReaders = append(t.limitedReaders, p)
-			sort.Strings(t.limitedReaders)
-			untailReader := t.limitedReaders[len(t.limitedReaders)-1]
+			limitedReaders = append(limitedReaders, p)
+			sort.Strings(limitedReaders)
+			untailReader := limitedReaders[len(limitedReaders)-1]
 			if !t.limitAlpSortDirect {
-				untailReader = t.limitedReaders[0]
-				copy(t.limitedReaders, t.limitedReaders[1:])
+				untailReader = limitedReaders[0]
+				copy(limitedReaders, limitedReaders[1:])
 			}
-			t.limitedReaders = t.limitedReaders[:len(t.limitedReaders)-1]
+			limitedReaders = limitedReaders[:len(limitedReaders)-1]
 			if untailReader == p {
 				level.Debug(t.logger).Log("msg", "No tail file, limit overload", "filename", p)
 				continue
