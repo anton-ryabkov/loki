@@ -1538,6 +1538,13 @@ labels:
   # Used to exclude files from being loaded. Can also use glob patterns.
   __path_exclude__: <string>
 
+  # Limit number of files to monitor on the __path__ for complex cases of log
+  # rotation.
+  [ __limit_files__: <integer> | default = 0 ]
+
+  # Alphanumeric sort direction to use during monitored file number limiting.
+  [ __limit_alpha_order__: direct | reverse | default = direct ]
+
   # Additional labels to assign to the logs
   [ <labelname>: <labelvalue> ... ]
 ```
