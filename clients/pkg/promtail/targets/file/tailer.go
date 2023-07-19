@@ -202,7 +202,6 @@ func (t *tailer) MarkPositionAndSize() error {
 		// If the file no longer exists, no need to save position information
 		if err == os.ErrNotExist {
 			level.Info(t.logger).Log("msg", "skipping update of position for a file which does not currently exist", "path", t.path)
-			return nil
 		}
 		return err
 	}
